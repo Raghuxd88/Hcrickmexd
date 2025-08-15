@@ -70,11 +70,14 @@
 
       const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       try {
-        const { data, error } = await supa.rpc('fn_create_room', { p_room_code: roomCode, p_host_name: hostName });
+        const { data, error } = await supa.rpc('fn_create_room', { 
+          p_room_code: roomCode, 
+          p_host_name: hostName 
+        });
         if(error) throw error;
 
         currentRoomId = data[0].room_id;
-        document.getElementById('roomInfo').textContent = `Room Created! Code: ${roomCode}`;
+        document.getElementById('roomInfo').textContent = `Room Created! Code: ${data[0].room_code_out}`;
         subscribeToRoom(currentRoomId);
         updateLobby(currentRoomId);
       } catch(err) {
@@ -89,7 +92,10 @@
       if(!playerName || !roomCode) return alert('Enter name and room code');
 
       try {
-        const { data, error } = await supa.rpc('fn_join_room', { p_room_code: roomCode, p_player_name: playerName });
+        const { data, error } = await supa.rpc('fn_join_room', { 
+          p_room_code: roomCode, 
+          p_player_name: playerName 
+        });
         if(error) throw error;
 
         currentRoomId = data[0].room_id;
