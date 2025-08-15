@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Handcricket</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            text-align: center;
+        }
+        .container {
+            background: white;
+            padding: 20px 40px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .screen {
+            display: none;
+        }
+        .screen.active {
+            display: block;
+        }
+        h1 {
+            color: #333;
+        }
+        .btn {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #007bff;
+            color: white;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+        #game-controls button {
+            width: 50px;
+            height: 50px;
+            font-size: 20px;
+            font-weight: bold;
+        }
+        #game-log {
+            height: 150px;
+            border: 1px solid #ccc;
+            overflow-y: scroll;
+            margin-top: 10px;
+            padding: 10px;
+            text-align: left;
+            background-color: #eee;
+        }
+        .score-board {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+</head>
+<body>
+
+    <div class="container">
+        <div id="main-menu" class="screen active">
+            <h1>Handcricket</h1>
+            <p>Select a game mode:</p>
+            <button class="btn" onclick="showScreen('pvp-menu')">Player vs Player</button>
+            <button class="btn" onclick="startPvCGame()">Player vs Computer</button>
+        </div>
+
+        <div id="pvp-menu" class="screen">
+            <h1>Player vs Player</h1>
+            <p>Connect to a game:</p>
+            <button class="btn" onclick="createRoom()">Create New Room</button>
+            <br><br>
+            <input type="text" id="room-id-input" placeholder="Enter Room ID">
+            <button class="btn" onclick="joinRoom()">Join Room</button>
+            <br><br>
+            <p>Share this Room ID with your friend:</p>
+            <p id="room-id-display"></p>
+            <button class="btn" onclick="copyRoomId()">Copy</button>
+            <br><br>
+            <button class="btn" onclick="showScreen('main-menu')">Back</button>
+        </div>
+
+        <div id="game-screen" class="screen">
+            <h1 id="game-title"></h1>
+            <div class="score-board">
+                <div>
+                    <h2>Your Score:</h2>
+                    <p id="player-score">0</p>
+                </div>
+                <div>
+                    <h2><span id="opponent-title">Opponent</span> Score:</h2>
+                    <p id="opponent-score">0</p>
+                </div>
+            </div>
+            
+            <p id="game-status">Toss a coin to start...</p>
+            <div id="game-controls">
+                <button class="btn" onclick="tossCoin()">Toss Coin</button>
+                <div id="number-controls" style="display: none;">
+                    <button class="btn" onclick="makePvpMove(1)">1</button>
+                    <button class="btn" onclick="makePvpMove(2)">2</button>
+                    <button class="btn" onclick="makePvpMove(3)">3</button>
+                    <button class="btn" onclick="makePvpMove(4)">4</button>
+                    <button class="btn" onclick="makePvpMove(5)">5</button>
+                    <button class="btn" onclick="makePvpMove(6)">6</button>
+                </div>
+            </div>
+            <br>
+            <p id="player-action"></p>
+            <p id="opponent-action"></p>
+            <div id="game-log"></div>
+            <br>
+            <button class="btn" onclick="showScreen('main-menu')">Back to Menu</button>
+        </div>
+
+        <div id="end-screen" class="screen">
+            <h1>Game Over</h1>
+            <h2 id="final-result"></h2>
+            <p id="final-scores"></p>
+            <button class="btn" onclick="showScreen('main-menu')">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        // SUPABASE CREDENTIALS - DO NOT SHARE
+        const SUPABASE_URL = 'https://ivievfgemqmcyzysocll.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2aWV2ZmdlbXFtY3l6eXNvY2xsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyNTE0NzksImV4cCI6MjA3MDgyNzQ3OX0.GX-yK6ll7A_STYV7fkVJ5mq9MjVOxq6YNDGZlfxuU-M';
+
+        const { createClient } = supabase;
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let gameMode; // 'pvc' or 'pvp'
+        let myTurn; // 'batting' or 'bowling'
+        let playerScore = 0;
+        let opponentScore = 0;
+        let target = 0;
+        let isTossDone = false;
+        let gameActive = false;
+        let isPlayer1 = false;
+        let roomId = null;
+        let opponentChoice = null;
+        let playerChoice = null;
+        let supabaseChannel = null;
+        
+        // This is a placeholder for a user's ID in a non-authenticated session
+        const USER_ID = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+
+
+        const screens = ['main-menu', 'pvp-menu', 'game-screen', 'end-screen'];
+
+        function showScreen(id) {
+            screens.forEach(s => {
+                document.getElementById(s).classList.remove('active');
+            });
+            document.getElementById(id).classList.add('active');
+        }
+
+        function updateUI() {
+            document.getElementById('player-score').textContent = playerScore;
+            document.getElementById('opponent-score').textContent = opponentScore;
+        }
+
+        function log(message) {
+            const logElement = document.getElementById('game-log');
+            logElement.innerHTML += `<p>${message}</p>`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function endGame(result) {
+            gameActive = false;
+            document.getElementById('game-controls').style.display = 'none';
+            document.getElementById('end-screen').classList.add('active');
+            document.getElementById('final-result').textContent = result;
+            document.getElementById('final-scores').textContent = `Your Score: ${playerScore}, Opponent Score: ${opponentScore}`;
+            showScreen('end-screen');
+
+            // Cleanup for PVP mode
+            if (gameMode === 'pvp') {
+                if (supabaseChannel) {
+                    supabaseClient.removeChannel(supabaseChannel);
+                }
+                supabaseClient.from('games').update({ status: 'completed', winner: result }).eq('id', roomId).then(() => {
+                    roomId = null;
+                    isPlayer1 = false;
+                });
+            }
+        }
+
+        function resetGame() {
+            playerScore = 0;
+            opponentScore = 0;
+            target = 0;
+            isTossDone = false;
+            gameActive = false;
+            document.getElementById('player-score').textContent = '0';
+            document.getElementById('opponent-score').textContent = '0';
+            document.getElementById('game-log').innerHTML = '';
+            document.getElementById('game-status').textContent = 'Toss a coin to start...';
+            document.getElementById('game-controls').style.display = 'block';
+            document.getElementById('number-controls').style.display = 'none';
+        }
+
+        // --- Player vs Computer Logic ---
+        function startPvCGame() {
+            gameMode = 'pvc';
+            resetGame();
+            document.getElementById('game-title').textContent = "Player vs Computer";
+            document.getElementById('opponent-title').textContent = "Computer";
+            showScreen('game-screen');
+        }
+
+        function tossCoin() {
+            const playerChoice = Math.floor(Math.random() * 2); // 0 for heads, 1 for tails
+            const computerChoice = Math.floor(Math.random() * 2);
+            isTossDone = true;
+
+            if (playerChoice === computerChoice) {
+                myTurn = 'batting';
+                log("It's a tie in toss! You won the toss and chose to bat.");
+                document.getElementById('game-status').textContent = "You are Batting. Select a number.";
+            } else {
+                myTurn = 'bowling';
+                log("You lost the toss. The computer chose to bat.");
+                document.getElementById('game-status').textContent = "You are Bowling. Select a number.";
+            }
+
+            document.getElementById('game-controls').innerHTML = '';
+            document.getElementById('game-controls').appendChild(document.getElementById('number-controls'));
+            document.getElementById('number-controls').style.display = 'block';
+            gameActive = true;
+        }
+
+        function makeMove(playerMove) {
+            if (!gameActive) return;
+
+            const computerMove = Math.floor(Math.random() * 6) + 1;
+            log(`You chose: ${playerMove}, Computer chose: ${computerMove}`);
+
+            if (myTurn === 'batting') {
+                if (playerMove === computerMove) {
+                    log("OUT! You are out.");
+                    target = playerScore + 1;
+                    myTurn = 'bowling';
+                    document.getElementById('game-status').textContent = `You are Bowling. Target: ${target}. Select a number.`;
+                } else {
+                    playerScore += playerMove;
+                }
+            } else if (myTurn === 'bowling') {
+                if (playerMove === computerMove) {
+                    log("OUT! Computer is out.");
+                    if (opponentScore < target) {
+                        endGame("You won! You defended the target.");
+                    } else if (opponentScore === target) {
+                        endGame("It's a tie!");
+                    } else {
+                        endGame("You lost! The computer chased the target.");
+                    }
+                } else {
+                    opponentScore += computerMove;
+                    if (opponentScore > target && target !== 0) {
+                        endGame("You lost! The computer chased the target.");
+                    }
+                }
+            }
+            updateUI();
+        }
+
+        // --- Player vs Player (Supabase) Logic ---
+        async function createRoom() {
+            gameMode = 'pvp';
+            resetGame();
+            document.getElementById('game-title').textContent = "Player vs Player";
+            document.getElementById('opponent-title').textContent = "Opponent";
+            isPlayer1 = true;
+            log("Creating new game room...");
+            
+            // Generate a simple, random 4-digit number for the room code
+            const roomCode = Math.floor(1000 + Math.random() * 9000);
+
+            const { data, error } = await supabaseClient
+                .from('games')
+                .insert({
+                    p1_id: USER_ID,
+                    room_code: roomCode
+                })
+                .select();
+
+            if (error) {
+                log("Error creating room: " + error.message);
+                return;
+            }
+            roomId = data[0].id;
+            document.getElementById('room-id-display').textContent = roomCode; // Display the numeric code
+            log("Room created! Waiting for another player...");
+            showScreen('pvp-menu');
+            listenForRoomUpdates();
+        }
+
+        async function joinRoom() {
+            gameMode = 'pvp';
+            resetGame();
+            document.getElementById('game-title').textContent = "Player vs Player";
+            document.getElementById('opponent-title').textContent = "Opponent";
+
+            const roomCodeInput = document.getElementById('room-id-input').value.trim();
+            if (!roomCodeInput) {
+                log("Please enter a Room ID.");
+                return;
+            }
+            const roomCode = parseInt(roomCodeInput, 10);
+            if (isNaN(roomCode)) {
+                log("Invalid Room ID. Please enter a number.");
+                return;
+            }
+
+            const { data, error } = await supabaseClient
+                .from('games')
+                .select('*')
+                .eq('room_code', roomCode)
+                .limit(1);
+
+            if (error || data.length === 0) {
+                log("Room not found or error joining.");
+                return;
+            }
+
+            isPlayer1 = false;
+            roomId = data[0].id;
+            await supabaseClient
+                .from('games')
+                .update({ p2_id: USER_ID, status: 'in_progress' })
+                .eq('id', roomId);
+
+            log("Joined room! Starting game...");
+            document.getElementById('game-status').textContent = "The game has started! Player 1 (the host) is Batting. You are Bowling.";
+            myTurn = 'bowling';
+            document.getElementById('game-controls').innerHTML = '';
+            document.getElementById('game-controls').appendChild(document.getElementById('number-controls'));
+            document.getElementById('number-controls').style.display = 'block';
+            gameActive = true;
+            showScreen('game-screen');
+            listenForRoomUpdates();
+        }
+
+        async function makePvpMove(playerMove) {
+            if (!gameActive) return;
+
+            const updateData = isPlayer1 ? { p1_choice: playerMove } : { p2_choice: playerMove };
+            await supabaseClient.from('games').update(updateData).eq('id', roomId);
+        }
+
+        function handlePvpGameLogic(data) {
+            const payload = data.new;
+            const myMoveKey = isPlayer1 ? 'p1_choice' : 'p2_choice';
+            const opponentMoveKey = isPlayer1 ? 'p2_choice' : 'p1_choice';
+
+            const myMove = payload[myMoveKey];
+            const opponentMove = payload[opponentMoveKey];
+
+            if (myMove !== null && opponentMove !== null) {
+                log(`You chose: ${myMove}, Opponent chose: ${opponentMove}`);
+
+                if (isPlayer1) {
+                    if (myMove === opponentMove) {
+                        log("OUT! You are out.");
+                        myTurn = 'bowling';
+                        target = playerScore + 1;
+                        document.getElementById('game-status').textContent = `You are Bowling. Target: ${target}. Select a number.`;
+                    } else {
+                        playerScore += myMove;
+                    }
+                } else { // I am Player 2
+                    if (myMove === opponentMove) {
+                        log("OUT! Opponent is out.");
+                        if (opponentScore < target) {
+                             endGame("You won! You defended the target.");
+                        } else {
+                            endGame("You lost! The opponent chased the target.");
+                        }
+                    } else {
+                        opponentScore += opponentMove;
+                        if (opponentScore > target && target !== 0) {
+                            endGame("You lost! The opponent chased the target.");
+                        }
+                    }
+                }
+                 updateUI();
+                 // Reset choices for next ball
+                 supabaseClient.from('games').update({ p1_choice: null, p2_choice: null }).eq('id', roomId).then(() => {
+                    console.log('Choices reset');
+                 });
+            }
+        }
+
+        function listenForRoomUpdates() {
+            if (supabaseChannel) {
+                supabaseClient.removeChannel(supabaseChannel);
+            }
+            supabaseChannel = supabaseClient
+                .from(`games:id=eq.${roomId}`)
+                .on('UPDATE', payload => {
+                    if (payload.new.status === 'in_progress' && payload.old.status === 'waiting' && !isPlayer1) {
+                         // This is for P2 joining, handled in joinRoom()
+                         showScreen('game-screen');
+                    } else {
+                        handlePvpGameLogic(payload);
+                    }
+                })
+                .subscribe();
+        }
+
+        function copyRoomId() {
+            const roomIdText = document.getElementById('room-id-display').textContent;
+            navigator.clipboard.writeText(roomIdText).then(() => {
+                alert('Room ID copied to clipboard!');
+            });
+        }
+    </script>
+</body>
+</html>
