@@ -105,10 +105,9 @@
                 </div>
             </div>
             
-            <p id="game-status">Toss a coin to start...</p>
+            <p id="game-status"></p>
             <div id="game-controls">
-                <button class="btn" onclick="tossCoin()">Toss Coin</button>
-                <div id="number-controls" style="display: none;">
+                <div id="number-controls">
                     <button class="btn" onclick="makeMove(1)">1</button>
                     <button class="btn" onclick="makeMove(2)">2</button>
                     <button class="btn" onclick="makeMove(3)">3</button>
@@ -141,17 +140,14 @@
         const { createClient } = supabase;
         const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        let gameMode; // 'pvc' or 'pvp'
-        let myTurn; // 'batting' or 'bowling'
+        let gameMode;
+        let myTurn;
         let playerScore = 0;
         let opponentScore = 0;
         let target = 0;
-        let isTossDone = false;
         let gameActive = false;
         let isPlayer1 = false;
         let roomId = null;
-        let opponentChoice = null;
-        let playerChoice = null;
         let supabaseChannel = null;
         let myId = null;
 
@@ -177,7 +173,6 @@
 
         function endGame(result) {
             gameActive = false;
-            document.getElementById('game-controls').style.display = 'none';
             document.getElementById('end-screen').classList.add('active');
             document.getElementById('final-result').textContent = result;
             document.getElementById('final-scores').textContent = `Your Score: ${playerScore}, Opponent Score: ${opponentScore}`;
@@ -198,15 +193,26 @@
             playerScore = 0;
             opponentScore = 0;
             target = 0;
-            isTossDone = false;
             gameActive = false;
             document.getElementById('player-score').textContent = '0';
             document.getElementById('opponent-score').textContent = '0';
             document.getElementById('game-log').innerHTML = '';
-            document.getElementById('game-status').textContent = 'Toss a coin to start...';
-            document.getElementById('game-controls').style.display = 'block';
-            document.getElementById('number-controls').style.display = 'none';
+            document.getElementById('game-status').textContent = '';
         }
+
+        async function getOrCreateAnonUser() {
+            let { data: { user }, error } = await supabaseClient.auth.getSession();
+            if (!user || error) {
+                ({ data: { user }, error } = await supabaseClient.auth.signInAnonymously());
+            }
+            if (user) {
+                myId = user.id;
+            } else {
+                log("Error: Could not get user ID for Supabase.");
+            }
+        }
+        
+        getOrCreateAnonUser();
 
         // --- Player vs Computer Logic ---
         function startPvCGame() {
@@ -214,27 +220,23 @@
             resetGame();
             document.getElementById('game-title').textContent = "Player vs Computer";
             document.getElementById('opponent-title').textContent = "Computer";
-            document.getElementById('game-controls').innerHTML = '<button class="btn" onclick="tossCoin()">Toss Coin</button>';
             showScreen('game-screen');
+            startPvC();
         }
 
-        function tossCoin() {
-            const playerChoice = Math.floor(Math.random() * 2); 
-            const computerChoice = Math.floor(Math.random() * 2);
-            isTossDone = true;
-
-            if (playerChoice === computerChoice) {
+        function startPvC() {
+            const playerToss = Math.floor(Math.random() * 6) + 1;
+            const computerToss = Math.floor(Math.random() * 6) + 1;
+            
+            if (playerToss >= computerToss) {
                 myTurn = 'batting';
-                log("It's a tie in toss! You won the toss and chose to bat.");
+                log(`You won the toss (${playerToss} vs ${computerToss})! You are batting.`);
                 document.getElementById('game-status').textContent = "You are Batting. Select a number.";
             } else {
                 myTurn = 'bowling';
-                log("You lost the toss. The computer chose to bat.");
+                log(`You lost the toss (${playerToss} vs ${computerToss}). The computer is batting.`);
                 document.getElementById('game-status').textContent = "You are Bowling. Select a number.";
             }
-
-            document.getElementById('game-controls').innerHTML = document.getElementById('number-controls').outerHTML;
-            document.getElementById('number-controls').style.display = 'block';
             gameActive = true;
         }
 
@@ -242,7 +244,7 @@
             if (!gameActive) return;
 
             const computerMove = Math.floor(Math.random() * 6) + 1;
-            log(`You chose: ${playerMove}, Computer chose: ${computerMove}`);
+            log(`You chose: ${playerMove}, Opponent chose: ${computerMove}`);
 
             if (myTurn === 'batting') {
                 if (playerMove === computerMove) {
@@ -250,12 +252,13 @@
                     target = playerScore + 1;
                     myTurn = 'bowling';
                     document.getElementById('game-status').textContent = `You are Bowling. Target: ${target}. Select a number.`;
+                    
                 } else {
                     playerScore += playerMove;
                 }
             } else if (myTurn === 'bowling') {
                 if (playerMove === computerMove) {
-                    log("OUT! Computer is out.");
+                    log("OUT! Opponent is out.");
                     if (opponentScore < target) {
                         endGame("You won! You defended the target.");
                     } else if (opponentScore === target) {
@@ -274,20 +277,6 @@
         }
 
         // --- Player vs Player (Supabase) Logic ---
-        async function getOrCreateAnonUser() {
-            let { data: { user }, error } = await supabaseClient.auth.getSession();
-            if (!user || error) {
-                ({ data: { user }, error } = await supabaseClient.auth.signInAnonymously());
-            }
-            if (user) {
-                myId = user.id;
-            } else {
-                log("Error: Could not get user ID for Supabase.");
-            }
-        }
-        
-        getOrCreateAnonUser();
-
         async function createRoom() {
             await getOrCreateAnonUser();
             if (!myId) return;
@@ -300,12 +289,15 @@
             log("Creating new game room...");
             
             const roomCode = Math.floor(1000 + Math.random() * 9000);
+            myTurn = 'batting';
 
             const { data, error } = await supabaseClient
                 .from('games')
                 .insert({
                     p1_id: myId,
-                    room_code: roomCode
+                    room_code: roomCode,
+                    turn: 'player1',
+                    status: 'waiting'
                 })
                 .select();
 
@@ -353,16 +345,15 @@
 
             isPlayer1 = false;
             roomId = data[0].id;
+            myTurn = 'bowling';
+
             await supabaseClient
                 .from('games')
                 .update({ p2_id: myId, status: 'in_progress' })
                 .eq('id', roomId);
 
             log("Joined room! Starting game...");
-            document.getElementById('game-status').textContent = "The game has started! Player 1 (the host) is Batting. You are Bowling.";
-            myTurn = 'bowling';
-            document.getElementById('game-controls').innerHTML = document.getElementById('number-controls').outerHTML;
-            document.getElementById('number-controls').style.display = 'block';
+            document.getElementById('game-status').textContent = "Game started! Player 1 is batting, you are bowling.";
             gameActive = true;
             showScreen('game-screen');
             listenForRoomUpdates();
@@ -371,7 +362,7 @@
         async function makePvpMove(playerMove) {
             if (!gameActive) return;
 
-            const updateData = isPlayer1 ? { p1_choice: playerMove } : { p2_choice: playerMove };
+            const updateData = isPlayer1 ? { p1_choice: playerMove, turn: 'player2' } : { p2_choice: playerMove, turn: 'player1' };
             await supabaseClient.from('games').update(updateData).eq('id', roomId);
         }
 
@@ -385,23 +376,23 @@
 
             if (myMove !== null && opponentMove !== null) {
                 log(`You chose: ${myMove}, Opponent chose: ${opponentMove}`);
-
-                if (isPlayer1) {
-                    if (myMove === opponentMove) {
-                        log("OUT! You are out.");
-                        myTurn = 'bowling';
-                        target = playerScore + 1;
-                        document.getElementById('game-status').textContent = `You are Bowling. Target: ${target}. Select a number.`;
-                    } else {
-                        playerScore += myMove;
-                    }
-                } else { // I am Player 2
+                
+                let isMyBall = payload.turn === (isPlayer1 ? 'player2' : 'player1');
+                
+                if (isMyBall) { // I am the bowler
                     if (myMove === opponentMove) {
                         log("OUT! Opponent is out.");
                         if (opponentScore < target) {
-                             endGame("You won! You defended the target.");
-                        } else {
+                            endGame("You won! You defended the target.");
+                        } else if (opponentScore > target && target !== 0) {
                             endGame("You lost! The opponent chased the target.");
+                        } else if (opponentScore === target) {
+                            endGame("It's a tie!");
+                        } else {
+                             // This is the first turn, no target set yet
+                             log("Opponent is OUT! Now it's your turn to bat.");
+                             myTurn = 'batting';
+                             document.getElementById('game-status').textContent = "Now it's your turn to bat. Select a number.";
                         }
                     } else {
                         opponentScore += opponentMove;
@@ -409,11 +400,21 @@
                             endGame("You lost! The opponent chased the target.");
                         }
                     }
+                } else { // I am the batsman
+                    if (myMove === opponentMove) {
+                        log("OUT! You are out.");
+                        target = playerScore + 1;
+                        myTurn = 'bowling';
+                        document.getElementById('game-status').textContent = `You are Bowling. Target: ${target}. Select a number.`;
+                    } else {
+                        playerScore += myMove;
+                    }
                 }
-                 updateUI();
-                 supabaseClient.from('games').update({ p1_choice: null, p2_choice: null }).eq('id', roomId).then(() => {
+
+                updateUI();
+                supabaseClient.from('games').update({ p1_choice: null, p2_choice: null }).eq('id', roomId).then(() => {
                     console.log('Choices reset');
-                 });
+                });
             }
         }
 
@@ -426,7 +427,7 @@
                 .on('UPDATE', payload => {
                     if (payload.new.status === 'in_progress' && payload.old.status === 'waiting' && !isPlayer1) {
                          showScreen('game-screen');
-                    } else {
+                    } else if (payload.new.status === 'in_progress' && payload.old.status === 'in_progress') {
                         handlePvpGameLogic(payload);
                     }
                 })
@@ -439,6 +440,7 @@
                 alert('Room ID copied to clipboard!');
             });
         }
+
     </script>
 </body>
 </html>
