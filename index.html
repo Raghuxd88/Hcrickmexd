@@ -279,7 +279,10 @@
         // --- Player vs Player (Supabase) Logic ---
         async function createRoom() {
             await getOrCreateAnonUser();
-            if (!myId) return;
+            if (!myId) {
+                log("Error: Could not get user ID. Please refresh.");
+                return;
+            }
 
             gameMode = 'pvp';
             resetGame();
@@ -314,7 +317,10 @@
 
         async function joinRoom() {
             await getOrCreateAnonUser();
-            if (!myId) return;
+            if (!myId) {
+                log("Error: Could not get user ID. Please refresh.");
+                return;
+            }
 
             gameMode = 'pvp';
             resetGame();
@@ -389,7 +395,6 @@
                         } else if (opponentScore === target) {
                             endGame("It's a tie!");
                         } else {
-                             // This is the first turn, no target set yet
                              log("Opponent is OUT! Now it's your turn to bat.");
                              myTurn = 'batting';
                              document.getElementById('game-status').textContent = "Now it's your turn to bat. Select a number.";
@@ -440,7 +445,16 @@
                 alert('Room ID copied to clipboard!');
             });
         }
+        
+        // --- Event Listeners for Game Modes ---
+        document.getElementById('main-menu').querySelector('.btn[onclick="startPvCGame()"]').onclick = function() {
+            showScreen('game-screen');
+            startPvCGame();
+        };
 
+        document.getElementById('main-menu').querySelector('.btn[onclick="showScreen(\'pvp-menu\')"]').onclick = function() {
+            showScreen('pvp-menu');
+        };
     </script>
 </body>
 </html>
