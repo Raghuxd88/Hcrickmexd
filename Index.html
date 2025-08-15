@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Supabase Room Creator</title>
+    <title>Supabase Room System</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
     <style>
         body {
@@ -11,26 +11,49 @@
             text-align: center;
             padding-top: 50px;
         }
+        .container {
+            max-width: 500px;
+            margin: auto;
+            border: 1px solid #ccc;
+            padding: 20px;
+            border-radius: 8px;
+        }
         button {
             padding: 10px 20px;
             font-size: 16px;
             cursor: pointer;
+            margin: 5px;
+        }
+        input {
+            padding: 10px;
+            font-size: 16px;
+            margin: 5px;
+            width: 150px;
         }
         #output {
             margin-top: 20px;
             border: 1px solid #ccc;
             padding: 10px;
-            display: inline-block;
-            min-width: 300px;
             min-height: 50px;
+            text-align: left;
+            background-color: #f9f9f9;
         }
     </style>
 </head>
 <body>
 
-    <h1>Test Supabase Room Creation</h1>
-    <button onclick="createRoom()">Create Room</button>
-    <div id="output"></div>
+    <div class="container">
+        <h1>Test Supabase Room System</h1>
+
+        <div id="room-controls">
+            <button onclick="createRoom()">Create New Room</button>
+            <br>
+            <input type="text" id="room-code-input" placeholder="Enter Room Code">
+            <button onclick="joinRoom()">Join Room</button>
+        </div>
+
+        <div id="output"></div>
+    </div>
 
     <script>
         // Supabase credentials
@@ -40,46 +63,124 @@
         const { createClient } = supabase;
         const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        async function createRoom() {
-            const outputDiv = document.getElementById('output');
-            outputDiv.textContent = "Attempting to create a room...";
+        let myId = null;
+        let roomId = null;
+        let isPlayer1 = false;
+        let supabaseChannel = null;
 
-            try {
-                // Sign in anonymously to get a user ID
-                const { data: { user }, error: authError } = await supabaseClient.auth.signInAnonymously();
-                
-                if (authError) {
-                    outputDiv.textContent = 'Authentication Error: ' + authError.message;
-                    return;
-                }
-                
-                const userId = user.id;
-                const roomCode = Math.floor(1000 + Math.random() * 9000);
+        const outputDiv = document.getElementById('output');
 
-                // Insert a new row into the 'games' table
-                const { data, error } = await supabaseClient
-                    .from('games')
-                    .insert({
-                        p1_id: userId,
-                        room_code: roomCode,
-                        turn: 'player1',
-                        status: 'waiting'
-                    })
-                    .select();
+        function log(message) {
+            outputDiv.innerHTML += `<p>${message}</p>`;
+            outputDiv.scrollTop = outputDiv.scrollHeight;
+        }
 
-                if (error) {
-                    outputDiv.textContent = 'Supabase API Error: ' + error.message;
-                } else if (data && data.length > 0) {
-                    outputDiv.textContent = 'Success! Room created with code: ' + data[0].room_code;
-                    console.log('Room data:', data[0]);
-                } else {
-                    outputDiv.textContent = 'Unknown error: No data returned from API.';
-                }
-
-            } catch (err) {
-                outputDiv.textContent = 'A network or unexpected error occurred: ' + err.message;
-                console.error(err);
+        async function getOrCreateAnonUser() {
+            let { data: { user }, error } = await supabaseClient.auth.getSession();
+            if (!user || error) {
+                ({ data: { user }, error } = await supabaseClient.auth.signInAnonymously());
             }
+            if (user) {
+                myId = user.id;
+            } else {
+                log("Error: Could not get user ID for Supabase. Check anonymous sign-in settings.");
+            }
+        }
+        
+        getOrCreateAnonUser();
+
+        async function createRoom() {
+            await getOrCreateAnonUser();
+            if (!myId) {
+                log("Error: User ID not available. Please try again.");
+                return;
+            }
+
+            log("Creating new room...");
+            isPlayer1 = true;
+            const roomCode = Math.floor(1000 + Math.random() * 9000);
+
+            const { data, error } = await supabaseClient
+                .from('games')
+                .insert({
+                    p1_id: myId,
+                    room_code: roomCode,
+                    turn: 'player1',
+                    status: 'waiting'
+                })
+                .select();
+
+            if (error) {
+                log("Supabase API Error: " + error.message);
+                return;
+            }
+            
+            roomId = data[0].id;
+            log(`Success! Room created with code: <strong style="color: blue;">${roomCode}</strong>`);
+            log("Waiting for another player to join...");
+            
+            listenForRoomUpdates();
+        }
+
+        async function joinRoom() {
+            await getOrCreateAnonUser();
+            if (!myId) {
+                log("Error: User ID not available. Please try again.");
+                return;
+            }
+
+            const roomCodeInput = document.getElementById('room-code-input').value.trim();
+            if (!roomCodeInput) {
+                log("Please enter a Room Code.");
+                return;
+            }
+            const roomCode = parseInt(roomCodeInput, 10);
+
+            log(`Attempting to join room ${roomCode}...`);
+            isPlayer1 = false;
+
+            const { data, error } = await supabaseClient
+                .from('games')
+                .select('*')
+                .eq('room_code', roomCode)
+                .eq('status', 'waiting')
+                .limit(1);
+
+            if (error || data.length === 0) {
+                log("Error: Room not found or is already full.");
+                return;
+            }
+
+            roomId = data[0].id;
+            
+            const { error: updateError } = await supabaseClient
+                .from('games')
+                .update({ p2_id: myId, status: 'in_progress' })
+                .eq('id', roomId);
+
+            if (updateError) {
+                log("Error joining room: " + updateError.message);
+                return;
+            }
+
+            log(`Successfully joined room! Game is starting...`);
+            listenForRoomUpdates();
+        }
+
+        function listenForRoomUpdates() {
+            if (supabaseChannel) {
+                supabaseClient.removeChannel(supabaseChannel);
+            }
+
+            supabaseChannel = supabaseClient
+                .from(`games:id=eq.${roomId}`)
+                .on('UPDATE', payload => {
+                    if (isPlayer1 && payload.new.status === 'in_progress') {
+                        log("A player has joined! The game can now begin.");
+                        console.log('Opponent ID:', payload.new.p2_id);
+                    }
+                })
+                .subscribe();
         }
     </script>
 </body>
