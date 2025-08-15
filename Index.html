@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supabase Room Creator</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding-top: 50px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #output {
+            margin-top: 20px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            display: inline-block;
+            min-width: 300px;
+            min-height: 50px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Test Supabase Room Creation</h1>
+    <button onclick="createRoom()">Create Room</button>
+    <div id="output"></div>
+
+    <script>
+        // Supabase credentials
+        const SUPABASE_URL = 'https://ivievfgemqmcyzysocll.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2aWV2ZmdlbXFtY3l6eXNvY2xsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyNTE0NzksImV4cCI6MjA3MDgyNzQ3OX0.GX-yK6ll7A_STYV7fkVJ5mq9MjVOxq6YNDGZlfxuU-M';
+
+        const { createClient } = supabase;
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        async function createRoom() {
+            const outputDiv = document.getElementById('output');
+            outputDiv.textContent = "Attempting to create a room...";
+
+            try {
+                // Sign in anonymously to get a user ID
+                const { data: { user }, error: authError } = await supabaseClient.auth.signInAnonymously();
+                
+                if (authError) {
+                    outputDiv.textContent = 'Authentication Error: ' + authError.message;
+                    return;
+                }
+                
+                const userId = user.id;
+                const roomCode = Math.floor(1000 + Math.random() * 9000);
+
+                // Insert a new row into the 'games' table
+                const { data, error } = await supabaseClient
+                    .from('games')
+                    .insert({
+                        p1_id: userId,
+                        room_code: roomCode,
+                        turn: 'player1',
+                        status: 'waiting'
+                    })
+                    .select();
+
+                if (error) {
+                    outputDiv.textContent = 'Supabase API Error: ' + error.message;
+                } else if (data && data.length > 0) {
+                    outputDiv.textContent = 'Success! Room created with code: ' + data[0].room_code;
+                    console.log('Room data:', data[0]);
+                } else {
+                    outputDiv.textContent = 'Unknown error: No data returned from API.';
+                }
+
+            } catch (err) {
+                outputDiv.textContent = 'A network or unexpected error occurred: ' + err.message;
+                console.error(err);
+            }
+        }
+    </script>
+</body>
+</html>
