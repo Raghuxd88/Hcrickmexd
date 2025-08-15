@@ -66,7 +66,7 @@
         let myId = null;
         let roomId = null;
         let isPlayer1 = false;
-        let pollInterval = null; // Variable to hold the polling interval
+        let supabaseChannel = null;
 
         const outputDiv = document.getElementById('output');
 
@@ -119,30 +119,7 @@
             log(`Success! Room created with code: <strong style="color: blue;">${roomCode}</strong>`);
             log("Waiting for another player to join...");
             
-            // Start polling to check for a joined player every 3 seconds
-            pollInterval = setInterval(checkJoinedStatus, 3000);
-        }
-
-        async function checkJoinedStatus() {
-            if (!isPlayer1 || !roomId) return;
-
-            const { data, error } = await supabaseClient
-                .from('games')
-                .select('p2_id, status')
-                .eq('id', roomId)
-                .single();
-
-            if (error) {
-                console.error("Polling error:", error);
-                return;
-            }
-
-            if (data.status === 'in_progress' && data.p2_id !== null) {
-                log("A player has joined! The game can now begin.");
-                console.log('Opponent ID:', data.p2_id);
-                // Stop polling once the player is found
-                clearInterval(pollInterval);
-            }
+            listenForRoomUpdates();
         }
 
         async function joinRoom() {
@@ -187,6 +164,23 @@
             }
 
             log(`Successfully joined room! Game is starting...`);
+            listenForRoomUpdates();
+        }
+
+        function listenForRoomUpdates() {
+            if (supabaseChannel) {
+                supabaseClient.removeChannel(supabaseChannel);
+            }
+
+            supabaseChannel = supabaseClient
+                .from(`games:id=eq.${roomId}`)
+                .on('UPDATE', payload => {
+                    if (isPlayer1 && payload.new.status === 'in_progress') {
+                        log("A player has joined! The game can now begin.");
+                        console.log('Opponent ID:', payload.new.p2_id);
+                    }
+                })
+                .subscribe();
         }
     </script>
 </body>
