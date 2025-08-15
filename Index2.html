@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Hand Cricket PVP</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    input, button { padding: 8px; margin: 5px; }
+    #lobby { margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Hand Cricket Player vs Player</h1>
+
+  <h2>Create Room (Host)</h2>
+  <input type="text" id="hostName" placeholder="Your Name" />
+  <button id="createRoomBtn">Create Room</button>
+  <p id="roomInfo"></p>
+
+  <h2>Join Room (Player 2)</h2>
+  <input type="text" id="joinName" placeholder="Your Name" />
+  <input type="text" id="joinCode" placeholder="Room Code" />
+  <button id="joinRoomBtn">Join Room</button>
+  <p id="joinInfo"></p>
+
+  <div id="lobby"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://nyglgpskpefeouepnyzu.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55Z2xncHNrcGVmZW91ZXBueXp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyNjE0MzYsImV4cCI6MjA3MDgzNzQzNn0.jXDi951njGyhZ5zW9JMp82VS9VfI-T-hr8xcZfcwPgo";
+    const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let currentRoomId = null;
+    let currentChannel = null;
+
+    async function subscribeToRoom(roomId) {
+      if(currentChannel) currentChannel.unsubscribe();
+
+      currentChannel = supa.channel('players-room-' + roomId)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` },
+          () => updateLobby(roomId)
+        )
+        .subscribe();
+    }
+
+    async function updateLobby(roomId) {
+      const { data: players } = await supa.from('players').select('name,is_host').eq('room_id', roomId).order('joined_at');
+      const { data: room } = await supa.from('rooms').select('status').eq('id', roomId).single();
+      const lobbyDiv = document.getElementById('lobby');
+
+      if(players && players.length > 0) {
+        lobbyDiv.innerHTML = `<h3>Lobby (Room ${roomId})</h3>`;
+        players.forEach(p => {
+          lobbyDiv.innerHTML += `<p>${p.name} ${p.is_host ? "(Host)" : ""}</p>`;
+        });
+
+        if(players.length === 2) {
+          lobbyDiv.innerHTML += `<p style="color:green;">Both players joined! Ready to start game.</p>`;
+        } else {
+          lobbyDiv.innerHTML += `<p style="color:orange;">Waiting for second player...</p>`;
+        }
+      }
+    }
+
+    // CREATE ROOM
+    document.getElementById('createRoomBtn').addEventListener('click', async () => {
+      const hostName = document.getElementById('hostName').value.trim();
+      if(!hostName) return alert('Enter your name');
+
+      const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      try {
+        const { data, error } = await supa.rpc('fn_create_room', { p_room_code: roomCode, p_host_name: hostName });
+        if(error) throw error;
+
+        currentRoomId = data[0].room_id;
+        document.getElementById('roomInfo').textContent = `Room Created! Code: ${roomCode}`;
+        subscribeToRoom(currentRoomId);
+        updateLobby(currentRoomId);
+      } catch(err) {
+        alert('Error creating room: ' + err.message);
+      }
+    });
+
+    // JOIN ROOM
+    document.getElementById('joinRoomBtn').addEventListener('click', async () => {
+      const playerName = document.getElementById('joinName').value.trim();
+      const roomCode = document.getElementById('joinCode').value.trim().toUpperCase();
+      if(!playerName || !roomCode) return alert('Enter name and room code');
+
+      try {
+        const { data, error } = await supa.rpc('fn_join_room', { p_room_code: roomCode, p_player_name: playerName });
+        if(error) throw error;
+
+        currentRoomId = data[0].room_id;
+        document.getElementById('joinInfo').textContent = `Joined Room! Code: ${roomCode}`;
+        subscribeToRoom(currentRoomId);
+        updateLobby(currentRoomId);
+      } catch(err) {
+        alert('Error joining room: ' + err.message);
+      }
+    });
+  </script>
+</body>
+</html>
