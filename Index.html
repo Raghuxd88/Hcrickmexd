@@ -168,19 +168,20 @@
         }
 
         function listenForRoomUpdates() {
-            if (supabaseChannel) {
-                supabaseClient.removeChannel(supabaseChannel);
+    if (supabaseChannel) {
+        supabaseClient.removeChannel(supabaseChannel);
+    }
+    supabaseChannel = supabaseClient
+        .from(`games:id=eq.${roomId}`)
+        .on('UPDATE', payload => {
+            if (isPlayer1 && payload.new.status === 'in_progress') {
+                log("A player has joined! The game can now begin.");
+                console.log('Opponent ID:', payload.new.p2_id);
             }
+        })
+        .subscribe();
+}
 
-            supabaseChannel = supabaseClient
-                .from(`games:id=eq.${roomId}`)
-                .on('UPDATE', payload => {
-                    if (isPlayer1 && payload.new.status === 'in_progress') {
-                        log("A player has joined! The game can now begin.");
-                        console.log('Opponent ID:', payload.new.p2_id);
-                    }
-                })
-                .subscribe();
         }
     </script>
 </body>
