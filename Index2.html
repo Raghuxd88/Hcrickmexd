@@ -4,9 +4,11 @@
   <meta charset="UTF-8">
   <title>Hand Cricket PVP</title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f2f2f2; }
     input, button { padding: 8px; margin: 5px; }
-    #lobby { margin-top: 20px; }
+    #lobby { margin-top: 20px; background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 0 5px #aaa; }
+    .waiting { color: orange; }
+    .ready { color: green; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -46,7 +48,6 @@
 
     async function updateLobby(roomId) {
       const { data: players } = await supa.from('players').select('name,is_host').eq('room_id', roomId).order('joined_at');
-      const { data: room } = await supa.from('rooms').select('status').eq('id', roomId).single();
       const lobbyDiv = document.getElementById('lobby');
 
       if(players && players.length > 0) {
@@ -56,10 +57,12 @@
         });
 
         if(players.length === 2) {
-          lobbyDiv.innerHTML += `<p style="color:green;">Both players joined! Ready to start game.</p>`;
+          lobbyDiv.innerHTML += `<p class="ready">Both players joined! Ready to start game.</p>`;
         } else {
-          lobbyDiv.innerHTML += `<p style="color:orange;">Waiting for second player...</p>`;
+          lobbyDiv.innerHTML += `<p class="waiting">Waiting for second player...</p>`;
         }
+      } else {
+        lobbyDiv.innerHTML = `<p>No players in the room yet.</p>`;
       }
     }
 
